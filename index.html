@@ -77,7 +77,6 @@
 <body class="p-4 md:p-8">
 
     <div class="max-w-6xl mx-auto">
-        <!-- Header -->
         <header class="header-content mb-6">
             <div>
                 <h1 class="text-3xl font-bold text-blue-600 flex items-center gap-2">
@@ -120,7 +119,6 @@
         </header>
 
         <div class="main-grid">
-            <!-- Left Column -->
             <div class="space-y-6">
                 <div class="card bg-gradient-to-br from-blue-500 to-indigo-600 text-white border-none flex items-center justify-between p-6">
                     <div>
@@ -139,7 +137,7 @@
                 <div class="card relative overflow-hidden">
                     <div class="flex justify-between items-start mb-4">
                         <h3 class="font-bold text-sm text-gray-700 flex items-center gap-2">
-                            <span>📊</span> テスト直前14日間の推移
+                            <span>📊</span> <span id="chart-title">テスト直前14日間の推移</span>
                         </h3>
                         <div class="text-right">
                             <p class="text-[10px] text-gray-400 font-bold uppercase">Graph Period Total</p>
@@ -192,7 +190,6 @@
                 </div>
             </div>
 
-            <!-- Right Column -->
             <div class="space-y-6">
                 <div class="card border-l-4 border-green-500">
                     <div class="flex justify-between items-center mb-4">
@@ -292,7 +289,6 @@
         </div>
     </div>
 
-    <!-- Confirm Modal -->
     <div id="confirm-modal" class="flex">
         <div class="bg-white rounded-3xl p-8 max-w-sm w-full mx-4 shadow-2xl">
             <h3 class="text-xl font-bold text-gray-800 mb-2">新しいテストを始めますか？</h3>
@@ -407,32 +403,81 @@
             const endLabel = document.getElementById('chart-end-label');
             const totalLabel = document.getElementById('graph-period-total');
             chart.innerHTML = "";
-            let endRefDate = state.testDateEnd ? new Date(state.testDateEnd) : new Date();
+            
+            let startDate, endDate;
+            const today = new Date();
+            let useTestPeriodMode = false;
+            
+            // グラフ表示範囲のインテリジェント計算
+            if (state.testDateStart) {
+                // テスト開始日の14日前を算出
+                const calculatedStartDate = new Date(state.testDateStart);
+                calculatedStartDate.setDate(calculatedStartDate.getDate() - 14);
+                
+                // 終了日はテスト終了日（未設定なら今日）
+                const calculatedEndDate = state.testDateEnd ? new Date(state.testDateEnd) : new Date();
+                
+                const sDateCheck = new Date(calculatedStartDate.getFullYear(), calculatedStartDate.getMonth(), calculatedStartDate.getDate());
+                const eDateCheck = new Date(calculatedEndDate.getFullYear(), calculatedEndDate.getMonth(), calculatedEndDate.getDate());
+                
+                // テスト14日前を迎えている（または終了日がそれ以降）場合のみ、固定期間モードをオン
+                if (sDateCheck <= eDateCheck) {
+                    startDate = calculatedStartDate;
+                    endDate = calculatedEndDate;
+                    useTestPeriodMode = true;
+                }
+            }
+            
+            // テスト期間未設定、またはまだ開始14日前になっていない通常時は「今日から過去14日間」を表示
+            if (!useTestPeriodMode) {
+                endDate = new Date();
+                startDate = new Date(endDate);
+                startDate.setDate(startDate.getDate() - 13);
+            }
+            
+            const sDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+            const eDate = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+            let diffDays = Math.round((eDate - sDate) / (1000 * 60 * 60 * 24)) + 1;
+            
             let totalMins = 0;
             let dailyData = [];
             let maxDailyTotal = 60; 
-            const todayStr = getFormattedDate(new Date());
+            const todayStr = getFormattedDate(today);
             const testStart = state.testDateStart ? new Date(state.testDateStart) : null;
             const testEnd = state.testDateEnd ? new Date(state.testDateEnd) : null;
 
-            for (let i = 13; i >= 0; i--) {
-                const targetDate = new Date(endRefDate);
-                targetDate.setDate(targetDate.getDate() - i);
+            // グラフタイトルの動的変更
+            const titleEl = document.getElementById('chart-title');
+            if (titleEl) {
+                titleEl.innerText = state.testDateStart ? "テスト対策期間の推移" : "テスト直前14日間の推移";
+            }
+
+            // ループ処理で日ごとのデータを集計
+            for (let i = 0; i < diffDays; i++) {
+                const targetDate = new Date(sDate);
+                targetDate.setDate(targetDate.getDate() + i);
                 const dateKey = getFormattedDate(targetDate);
                 const subjectSums = {};
                 let dayTotal = 0;
+                
                 state.logs.filter(l => l.date === dateKey).forEach(l => {
                     subjectSums[l.subject] = (subjectSums[l.subject] || 0) + l.minutes;
                     dayTotal += l.minutes;
                 });
+                
                 const isTestPeriod = testStart && testEnd && targetDate >= testStart && targetDate <= testEnd;
                 dailyData.push({ date: dateKey, subjects: subjectSums, total: dayTotal, isToday: dateKey === todayStr, isTestPeriod: isTestPeriod });
                 totalMins += dayTotal;
                 if (dayTotal > maxDailyTotal) maxDailyTotal = dayTotal;
-                if (i === 13) startLabel.innerText = `${targetDate.getMonth()+1}/${targetDate.getDate()}`;
-                if (i === 0) endLabel.innerText = state.testDateEnd ? "終了日" : "本日";
+                
+                // 最初と最後の日付ラベルを設定
+                if (i === 0) startLabel.innerText = `${targetDate.getMonth()+1}/${targetDate.getDate()}`;
+                if (i === diffDays - 1) endLabel.innerText = state.testDateEnd ? "終了日" : "本日";
             }
+            
             totalLabel.innerText = `${totalMins}分`;
+            
+            // グラフ描画
             dailyData.forEach(d => {
                 const barContainer = document.createElement('div');
                 barContainer.className = `flex-grow flex flex-col items-center group relative h-full justify-end ${d.isTestPeriod ? 'test-period-bg' : ''}`;
